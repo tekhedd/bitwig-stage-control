@@ -17,7 +17,7 @@ for the keyboard and clip controls to specific locations for better live control
 
 ## Strategy
 
-This design attempts to solve the problem by loading all possible configurations into a single project. 
+This design attempts to solve the problem by loading all possible configurations into a single project. "Current program" is represented by an integer value stored in a User Control. Each program maps to a dedicated group of 5 scenes.
 
 Benefits:
  * Zero load time when switching patches
