@@ -5,30 +5,38 @@ Controller Scripts to manage Bitwig in a live performance environment using one 
 
  * Immediately seek to and load a specific performance configuration without touching the computer
  * Keys and controls should always control the current performance configuration, with no possibility of accidentally changing that.
- * Send program change to VSTi plugins (VB3 = indispensible!)
+ * Load Bitwig presets containing native and/or VST plugins
+ * Send program change to VSTi plugins
  * Allow remote control using Program Change commands from MIDI IN
  * Stability and maintainability
+ * Map controls to currently loaded macros as completely as possible
+ * Always-on access to master volume.
+ * Intelligent mapping of remaining controls to channel volumes?
+
+Dreams:
+
+ * Find and load preset by name (via MIDI SYSEX messages?)
+ * Map songs to patches or sequence-of-patches
 
 ## Strategy
 
-This design attempts to solve the problem by loading all possible configurations into a single project. "Current program" is represented by an integer value stored in a User Control. Each program maps to a dedicated group of 5 scenes.
+This design attempts to solve the problem by loading all possible configurations into a single project. Presets are loaded into the first device in Track 1 by searching for specially-named presets. "Current program" is represented by an integer value stored in a User Control. Each program maps to a dedicated group of 5 scenes for clip launching (configurable).
 
 Benefits:
- * Zero load time when switching patches
+ * Fast load time when switching patches
  * It's the Bitwig Way, simple to code
+ * By using Instrument Layers for the default device, any combination of instruments can be loaded with a patch
+ * Keyboard always sends to Track 1, no danger of accidentally disabling input, no need to enable
 
 Drawbacks:
- * Plugin parameters are not reset to the saved values when you select a program
- * Difficult to do creative routing 
- * Requires much RAM and slightly more CPU
- * Limited number of clips per patch, routing, etc, to reduce the ram/cpu limitations
- * At 5 patches per scene, you could have as many as 320 scenes to manage. Ew.
+ * Limited number of clips per patch
+ * At 5 Scenes per patch, there could be a lot of scenes
+ * No way to pass raw MIDI CC data to Track 1
+ * Controls are limited to 8 Macros, because loaded presets do not contain mappings
 
 ### Alternate approaches
 
 The "open tab" approach would require the controller script to locate scenes by navigating the list of open tabs. This requires opening every possible patch in a tab before starting. Bitwig can handle this, but can you?
-
-The controller script could  load presets into devices in the current open project by a) navigating the project structure to locate devices, and then b) opening the preset navigator and reading the names of all the presets. This would probably work but look funny, and seems prone to error. As we don't really want errors on stage, I have vetoed this approach for now.
 
 ## What it does and how to use it
 
