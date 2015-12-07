@@ -2,17 +2,29 @@
 var STARTING_COLOR = [ 0, 3 ]; // red, green
 var STOPPING_COLOR = [ 0, 0 ];
 var RECORD_COLOR = [ 3, 0 ];
+var NOCLIP_COLOR = [ 0, 0 ];
 
 function LaunchkeyClipState( defaultColor, playingColor )
 {
    this._color = defaultColor;
    this._defaultColor = defaultColor;
    this._playingColor = playingColor;
+   this._hasClip = false;
 }
 
 LaunchkeyClipState.prototype.getColor = function()
 {
-   return this._color;
+   if (this._hasClip) {
+      return this._color;
+   }
+   else {
+      return NOCLIP_COLOR;
+   }
+};
+
+LaunchkeyClipState.prototype.setHasClip = function( hasClip )
+{
+   this._hasClip = hasClip;
 };
 
 //
@@ -87,19 +99,19 @@ LaunchkeyClipsDisplay.prototype.initState = function()
    track0[1] = new LaunchkeyClipState( [1, 0], [3, 0] );
    track0[2] = new LaunchkeyClipState( [1, 0], [3, 0] );
    track0[3] = new LaunchkeyClipState( [1, 0], [3, 0] );
-   track0[4] = new LaunchkeyClipState( [1, 0], [3, 0] );
+   track0[4] = new LaunchkeyClipState( [0, 0], [0, 1] );
 
    track1[0] = new LaunchkeyClipState( [2, 1], [2, 2] );
    track1[1] = new LaunchkeyClipState( [2, 1], [2, 2] );
    track1[2] = new LaunchkeyClipState( [2, 1], [2, 3] );
    track1[3] = new LaunchkeyClipState( [2, 1], [2, 3] );
-   track1[4] = new LaunchkeyClipState( [2, 1], [2, 3] );
+   track1[4] = new LaunchkeyClipState( [0, 0], [0, 1] );
 
    track2[0] = new LaunchkeyClipState( [1, 2], [3, 3] );
    track2[1] = new LaunchkeyClipState( [1, 2], [3, 3] );
    track2[2] = new LaunchkeyClipState( [1, 2], [3, 3] );
    track2[3] = new LaunchkeyClipState( [1, 2], [3, 3] );
-   track2[4] = new LaunchkeyClipState( [1, 2], [3, 3] );
+   track2[4] = new LaunchkeyClipState( [0, 0], [0, 1] );
 };
 
 LaunchkeyClipsDisplay.prototype.flush = function()
@@ -148,4 +160,10 @@ LaunchkeyClipsDisplay.prototype.updatePlaybackState = function( trackIx, slotIx,
 {
    var clipState = this._track[trackIx][slotIx];
    clipState.setState( state, isQueued );
+};
+
+LaunchkeyClipsDisplay.prototype.updateHasClip = function( trackIx, slotIx, hasClip )
+{
+   var clipState = this._track[trackIx][slotIx];
+   clipState.setHasClip( hasClip );
 };

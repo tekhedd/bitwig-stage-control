@@ -3,7 +3,7 @@
 
 loadAPI(1);
 
-host.defineController("BYTE HEAVEN", "Launchkey Stage Control", "1.0.0.0", "88182079-f4b0-452c-a598-82850009d614");
+host.defineController("BYTE HEAVEN", "Launchkey Stage Control", "1.0.0.0", "88182079-f4b0-452c-a598-82850009d615");
 
 host.defineMidiPorts(2, 2);
 host.addDeviceNameBasedDiscoveryPair(["Launchkey 61", "MIDIIN2 (Launchkey 61)"], ["Launchkey 61", "MIDIOUT2 (Launchkey 61)"]);
@@ -13,6 +13,7 @@ load("net.byteheaven.LaunchkeyBlinkeys.js");
 load("net.byteheaven.LaunchkeyPatchSelectButton.js");
 load("net.byteheaven.LaunchkeyCurrentPatchDisplay.js");
 load("net.byteheaven.LaunchkeyClipsDisplay.js");
+load("net.byteheaven.PresetLoader.js");
 
 /**
  * @const
@@ -33,11 +34,7 @@ var transport;
 
 var sceneBank;
 
-// Currently selected track for next/prev
-var cursorTrack;
-
-// cursorTrack's primary device, which is automatically the current track's
-// primary device, which is spooky.
+// primary device that we are controlling
 var primaryDevice;
 
 // For master volume ctrl etc
@@ -53,6 +50,8 @@ var clipsDisplay;
 var patchSelector;
 
 var patchSelectButton;
+
+var pitchUserControl;
 
 function instrumentRackTrack()
 {
@@ -100,35 +99,48 @@ var isIncontrolPads = true;
 // 
 // Patch/bank selection is active when the InControl pads button is 
 // active. 
-function PatchSelector( currentPatchDisplay, patchUserControl )
+function PatchSelector( currentPatchDisplay, patchUserControl, presetLoader )
 {
    this._patchDisplay = currentPatchDisplay;
    
    // the patch number as a control
    this.patchUserControl = patchUserControl;
+   
+   /**
+    * @type !PresetLoader
+    */
+   this._presetLoader = presetLoader;
 };
 
 PatchSelector.prototype.recalc = function()
 {
-   // We want the selected scene triggered and ready to go, but the
-   // transport stopped and rewound
-   transport.stop();
-   transport.rewind();
-   
    var program = this.getCurrentProgram();
-   
-   host.showPopupNotification( "GOTO Program: " + (program + 1) );
    
    // TODO: use patch mapper instead of directly
    //       setting control value here.
    this.patchUserControl.set( program, 100.0 );
 
-   // TODO: program change for plugins?
-   // noteInput.sendRawMidiEvent( MIDI program change? )
-   
    // Make sure "indication" is set for the right block of things
    this._scrollToSceneInternal( program );
 
+   // Stop all clips
+   // trackBank.getClipLauncherScenes().stop();
+   
+   // Launch the last scene in the bank
+   trackBank.getClipLauncherScenes().launch( PROGRAM_WIDTH - 1 );
+
+   // Send program change for plugins (only works if monitoring so never mind)
+   // keyboardNoteInput.sendRawMidiEvent( 0xc0, program, 0 );
+   
+   var loadedName = this._presetLoader.loadPreset( program );
+   if (loadedName)
+   {
+      host.showPopupNotification( "" + loadedName + ' (' + (program + 1) + ')' );
+   }
+   else
+   {
+      host.showPopupNotification( 'NO PATCH FOUND (' + (program + 1) + ')' );
+   }
 };
 
 //
@@ -151,18 +163,23 @@ PatchSelector.prototype.scrollToCurrentProgram = function()
    this._scrollToSceneInternal( this.getCurrentProgram() );
 };
 
+//
+// Moves the "indicated" track region to include this program. 
+//
 PatchSelector.prototype._scrollToSceneInternal = function( program )
 {
    var rootScene = program * PROGRAM_WIDTH; // Each program is a grid if 8 scenes
    
    trackBank.scrollToChannel( 0 ); // keep the first bank of tracks selected
+   
+   // Why twice? In v1.3.5, if you only call it once, sometimes it actually
+   // scrolls to the *next* bank of scenes. Calling it twice always works. :/
+   trackBank.scrollToScene( rootScene );
    trackBank.scrollToScene( rootScene );
    
    sceneBank.scrollTo( rootScene );
+   sceneBank.scrollTo( rootScene );
    
-   // Don't launch scene by default... Go there, and let buttons 1-8 control that.
-   // trackBank.getClipLauncherScenes().launch( this.patch );
-
    // Make sure the first 8 tracks are marked as "we are messing with this"
    for (var i = 0; i < BANK_HEIGHT; i++)
    {
@@ -243,50 +260,67 @@ PatchSelector.prototype.prev = function( patch )
 
 function init()
 {
-   // All note on/off on channel 1. Manually disabled with InControl-pads
-   // keyboardNoteInput = host.getMidiInPort(0).createNoteInput( "Keyboard", "80????", "90????" );
+   // Create an input that accepts nothing (actually FFFFFF is "reset" but whatever, 
+   // if we don't provide a valid mask this either fails or creates a default input,
+   // which is totally not what we want.)
+   //
+   // We will manually forward note events in the midi callback.
+   //
+   // I don't think this controller *does* channel pressure (Dxxxxx) 
+   // pitch bend (e0????) is only 7 bit, which you'll already know if you've
+   // ever used the pitch bend control on a Launchkey. :}
    
-   // Include controllers but not note on/off. We will manually forward notes to this input
-   // when InControl-pads is turned off.
-   keyboardNoteInput = host.getMidiInPort(0).createNoteInput( "Keys and Controls", "B001??", "D0????", "E0????" );
-   keyboardNoteInput.setShouldConsumeEvents( true ); // if false, we may have a loop.
+   keyboardNoteInput = host.getMidiInPort(0).createNoteInput( "Keyboard", "FFFFFF" );
+   keyboardNoteInput.setShouldConsumeEvents( false );
    
    // Pads: note on/off on channel 10 when InControl is off.
-   host.getMidiInPort(0).createNoteInput( "Pads", "89????", "99????" );
+   host.getMidiInPort(0).createNoteInput( "Pads", "89????", "99????" ) // "D?????", "E?????" );
 
-   host.getMidiInPort(0).setMidiCallback(onMidi0);
-   host.getMidiInPort(1).setMidiCallback(onMidi1);
+   host.getMidiInPort(0).setMidiCallback( onMidi0 );
+   host.getMidiInPort(1).setMidiCallback( onMidi1 );
    
 	transport = host.createTransport();
    sceneBank = host.createSceneBank( PROGRAM_WIDTH );
    masterTrack = host.createMasterTrack( PROGRAM_WIDTH * 64 ); // Can't figure how to scroll the bank!
    
-   cursorTrack = host.createArrangerCursorTrack( 0, PROGRAM_WIDTH );
-   primaryDevice = cursorTrack.getPrimaryDevice();
-   
    trackBank = host.createMainTrackBank( BANK_HEIGHT, 0, PROGRAM_WIDTH );
    
-   if (! clipsTrack1())
-   {
-      errorln( "Expected 4 tracks. Panicing madly." );
-   }
-
    blinkeys = new LaunchkeyBlinkeys( host.getMidiOutPort(1) );
    currentPatchDisplay = new LaunchkeyCurrentPatchDisplay( blinkeys );
    clipsDisplay = new LaunchkeyClipsDisplay( blinkeys );
    patchSelectButton = new LaunchkeyPatchSelectButton( blinkeys );
    
-   var controlBank = host.createUserControls( 1 );
-   var patchUserControl = controlBank.getControl( 0 );
+   var controlBank = host.createUserControls( 2 );
+   
+   var patchUserControl = controlBank.getControl( 0 ); // current patch 0.00 - 0.63
+   pitchUserControl = controlBank.getControl( 1 );
+   
    patchUserControl.setIndication( true ); // it's mapped
    patchUserControl.setLabel( "Patch Number" );
    
-   // This does nothing like I would expect
-   // patchUserControl.addValueObserver( 101, function(value) {
-      // // println( "PATCH IS NOW " + value );
-   // });
+   pitchUserControl.setIndication( true );
+   pitchUserControl.setLabel( "Pitch Bend" );
+   
+   // Create a device that will always point to the first device of the first 
+   // track, and then get that device as the primaryDevice.
 
-   patchSelector = new PatchSelector( currentPatchDisplay, patchUserControl );
+   // This moves with the cursor. NO.
+   // var cursorTrack = host.createArrangerCursorTrack( 0, 1 );
+   // primaryDevice = cursorTrack.getPrimaryDevice();
+   
+   // Cursor is a device and also a cursor I think.
+   var bank = instrumentRackTrack().createDeviceBank( 1 );
+   bank.scrollTo( 0 ); // go first in chain
+   var device = bank.getDevice( 0 ); // get first(only) device in bank
+   primaryDevice = device;
+   
+   // For best results, primary device should be Instrument Layer 
+   // primaryDevice.addNameObserver( 80, "DUH", function(name) { println( "NAME: " + name ); });
+   
+   // We will load presets into the primary device
+   var presetLoader = new PresetLoader( primaryDevice );
+
+   patchSelector = new PatchSelector( currentPatchDisplay, patchUserControl, presetLoader );
 
    // ** Set initial state **
    
@@ -300,6 +334,19 @@ function init()
    0 );
    
    // Track the current state of the selected clips
+
+   clipsTrack1().getClipLauncherSlots().addHasContentObserver(function(slotIx, hasClip) {
+      clipsDisplay.updateHasClip( 0, slotIx, hasClip );
+   });
+
+   clipsTrack2().getClipLauncherSlots().addHasContentObserver(function(slotIx, hasClip) {
+      clipsDisplay.updateHasClip( 1, slotIx, hasClip );
+   });
+
+   clipsTrack3().getClipLauncherSlots().addHasContentObserver(function(slotIx, hasClip) {
+      clipsDisplay.updateHasClip( 2, slotIx, hasClip );
+   });
+   
    clipsTrack1().getClipLauncherSlots().addPlaybackStateObserver(function(slotIx, state, isQueued) {
       clipsDisplay.updatePlaybackState( 0, slotIx, state, isQueued );
    });
@@ -324,7 +371,16 @@ function init()
    // host.scheduleTask(blinkTimer, null, 100);
 
    // Initialize stuff
+   // TODO: put this on a delay, as the preset list is not availble during
+   //       the initial controller load.
    patchSelector.reset();
+
+   // TODO:    
+   // 2a) set observer to detect when "firstdevice" changes
+   // 2b) remove indication from old device
+   // 2c) add indication to new firstDevice
+   // 3) (optional) Set Source for first track and enable monitoring?
+   
 }
 
 function updateIndications()
@@ -344,6 +400,9 @@ function updateIndications()
 
 function exit()
 {
+   // Turn off lights
+   // TODO
+   
    // Disable InControl mode
    host.getMidiOutPort(1).sendMidi( 0x90, 0x0C, 0x00 );
 }
@@ -363,76 +422,82 @@ function flush()
 
 function onMidi0(status, data1, data2)
 {
-   // if (blinkeys.masterButtonLed.isOn())
-   // {
-      // println( "MIDI0" );
-      // printMidi(status, data1, data2);
-   // }
-
-   if (isChannelController(status))
+   if (blinkeys.masterButtonLed.isOn())
    {
-      if (data1 == 59) // Master
+      println( "MIDI0" );
+      printMidi(status, data1, data2);
+   }
+
+   if (MIDIChannel(status) == 0) // channel 1
+   {
+      if (status == 0xb0 && data1 == 59) // master button: does what again?
       {
-         // This button is so cool. It just is.
+         // This button is so cool that it gets special treatment.
          if (data2 == 127) {
             blinkeys.masterButtonLed.setIsOn( ! blinkeys.masterButtonLed.isOn() );
          }
       }
-   }
-   else
-   {
-      if (MIDIChannel(status) == 0) // channel 1
+      else if (isIncontrolPads) 
       {
          // in InControl pads mode, force keyboard notes to track 1
-         if (isIncontrolPads)
+         if (isNoteOn(status))
          {
-            if (isNoteOn(status))
-            {
-               instrumentRackTrack().startNote( data1, data2 );
-            }
-            else if (isNoteOff(status))
-            {
-               instrumentRackTrack().stopNote( data1, data2 );
-            }
-         } 
-         else // note passthrough
-         {
-            keyboardNoteInput.sendRawMidiEvent( status, data1, data2 );
+            instrumentRackTrack().startNote( data1, data2 );
          }
-      }
-      else if (MIDIChannel(status) == 9)
+         else if (isNoteOff(status))
+         {
+            instrumentRackTrack().stopNote( data1, data2 );
+         }
+         else if (isChannelController(status) && status == 0xe0) // is pitch bend, channel 1
+         {
+            // This won't get pitch bend to track 1, but at least you can
+            // now map it to a control. No per-note bend for you today. :(
+            pitchUserControl.set( data2, 128 ); // yeah it's only 7 bit
+         }
+         // No default event passthrough. The mapper can map to raw 
+         // MIDI and in performance mode we don't want anything
+         // happening that's not automated. If you must have CC, you need
+         // to write a VST that can generate it because damned if I can
+         // find one.
+      } 
+      else 
       {
-         // Retained here, well, just in case I guess.
-         // if (isNoteOn(status))
-         // {
-            // // bottom row = 36-39, 45-47
-            // // top row = 40-43, 48-51
-            // if (data1 >= 36 && data1 <= 39)
-            // {
-               // var i = data1 - 36;
-            // }
-            // else if (data1 >= 44 && data1 <= 47)
-            // {
-               // var i = data1 - 44 + 4; 
-            // }
-            // else if (data1 >= 40 && data1 <= 43) // Top row left 4
-            // {
-               // var i = data1 - 40;
-            // }
-            // else if (data1 >= 48 && data1 <= 51) // Top row right 4
-            // {
-               // var i = data1 - 48 + 4;
-            // }
-         // }
+         // event passthrough to the input
+         keyboardNoteInput.sendRawMidiEvent( status, data1, data2 );
       }
+   }
+   else if (MIDIChannel(status) == 9)
+   {
+      // Drum pads. Retained here, well, just in case I guess.
+      // if (isNoteOn(status))
+      // {
+         // // bottom row = 36-39, 45-47
+         // // top row = 40-43, 48-51
+         // if (data1 >= 36 && data1 <= 39)
+         // {
+            // var i = data1 - 36;
+         // }
+         // else if (data1 >= 44 && data1 <= 47)
+         // {
+            // var i = data1 - 44 + 4; 
+         // }
+         // else if (data1 >= 40 && data1 <= 43) // Top row left 4
+         // {
+            // var i = data1 - 40;
+         // }
+         // else if (data1 >= 48 && data1 <= 51) // Top row right 4
+         // {
+            // var i = data1 - 48 + 4;
+         // }
+      // }
    }
 }
 
 function onMidi1(status, data1, data2)
 {
-   // if (blinkeys.masterButtonLed.isOn()) {
-      // printMidi(status, data1, data2);
-   // }
+   if (blinkeys.masterButtonLed.isOn()) {
+      printMidi(status, data1, data2);
+   }
 
    if (isChannelController(status))
    {
@@ -598,9 +663,7 @@ function onMidi1(status, data1, data2)
          }
          else if (data1 == 120) // round button (bottom)
          {
-            // Launch the last scene in the currently selected page
-            patchSelector.scrollToCurrentProgram(); // make sure sceneBank has the right page
-            sceneBank.launchScene( 4 ); 
+            trackBank.getClipLauncherScenes().stop(); // STOP
          }
          else if (data1 == 13) // incontrol knobs
          {
