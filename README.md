@@ -26,7 +26,8 @@ Benefits:
  * Fast load time when switching patches
  * It's the Bitwig Way, simple to code
  * By using Instrument Layers for the default device, any combination of instruments can be loaded with a patch
- * Keyboard always sends to Track 1, no danger of accidentally disabling input, no need to enable
+ * Keyboard always sends to Track 1, no danger of accidentally disabling input, no need to enable monitoring
+ * Single project - can transition from one configuration to another without stopping clips or losing tempo
 
 Drawbacks:
  * Limited number of clips per patch
