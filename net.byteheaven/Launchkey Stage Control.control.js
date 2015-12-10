@@ -72,6 +72,9 @@ function clipsTrack1()
    return trackBank.getChannel( 3 ); 
 }
 
+var subDevice1;
+var subDevice2;
+
 // Setting the value of the incontrol light also sets the value
 // of incontrol for that button
 function Incontrol( ctrlId )
@@ -123,24 +126,19 @@ PatchSelector.prototype.recalc = function()
    // Make sure "indication" is set for the right block of things
    this._scrollToSceneInternal( program );
 
-   // Stop all clips
-   // trackBank.getClipLauncherScenes().stop();
-   
    // Launch the last scene in the bank
    trackBank.getClipLauncherScenes().launch( PROGRAM_WIDTH - 1 );
-
+   
+   // Enable monitoring for track 1. Yes dangerous. So be careful
+   // what you hook up. We need input working.
+   
+   // var selector = instrumentRackTrack().getSourceSelector();
+   // instrumentRackTrack().getMonitor().set( true ); // INSTANT CRASH
+   
    // Send program change for plugins (only works if monitoring so never mind)
    // keyboardNoteInput.sendRawMidiEvent( 0xc0, program, 0 );
    
    var loadedName = this._presetLoader.loadPreset( program );
-   if (loadedName)
-   {
-      host.showPopupNotification( "" + loadedName + ' (' + (program + 1) + ')' );
-   }
-   else
-   {
-      host.showPopupNotification( 'NO PATCH FOUND (' + (program + 1) + ')' );
-   }
 };
 
 //
@@ -281,7 +279,9 @@ function init()
    
 	transport = host.createTransport();
    sceneBank = host.createSceneBank( PROGRAM_WIDTH );
-   masterTrack = host.createMasterTrack( PROGRAM_WIDTH * 64 ); // Can't figure how to scroll the bank!
+   masterTrack = host.createMasterTrack( PROGRAM_WIDTH * 64 ); 
+   
+   // TODO: Can't figure how to scroll the display here
    
    trackBank = host.createMainTrackBank( BANK_HEIGHT, 0, PROGRAM_WIDTH );
    
@@ -301,7 +301,7 @@ function init()
    pitchUserControl.setIndication( true );
    pitchUserControl.setLabel( "Pitch Bend" );
    
-   // Create a device that will always point to the first device of the first 
+   // * Create a device that will always point to the first device of the first 
    // track, and then get that device as the primaryDevice.
 
    // This moves with the cursor. NO.
@@ -311,16 +311,40 @@ function init()
    // Cursor is a device and also a cursor I think.
    var bank = instrumentRackTrack().createDeviceBank( 1 );
    bank.scrollTo( 0 ); // go first in chain
-   var device = bank.getDevice( 0 ); // get first(only) device in bank
-   primaryDevice = device;
-   
-   // For best results, primary device should be Instrument Layer 
-   // primaryDevice.addNameObserver( 80, "DUH", function(name) { println( "NAME: " + name ); });
+   primaryDevice = bank.getDevice( 0 ); // get first(only) device in bank
    
    // We will load presets into the primary device
    var presetLoader = new PresetLoader( primaryDevice );
+   presetLoader.setPatchLoadedObserver( function(number, name){
+      if (name)
+      {
+         host.showPopupNotification( "" + name + ' (' + (number + 1) + ')' );
+      }
+      else
+      {
+         host.showPopupNotification( 'NO PRESET FOUND (' + (number + 1) + ')' );
+      }
+   });
+   
 
    patchSelector = new PatchSelector( currentPatchDisplay, patchUserControl, presetLoader );
+   
+   // * Create a device that will point to:
+   //   primaryDevice -> layer(0) -> Primary Device
+   //   So we can manipulate its macros.
+   primaryDevice.hasLayers().addValueObserver(function(hasLayers){
+      println( "Primary device has layers: " + hasLayers );
+      if (hasLayers)
+      {
+         // LayerBank CAUSES CRASH
+         // var layerBank = primaryDevice.createLayerBank( 1 );
+         // layerBank.scrollToChannel( 0 );
+         // var subDeviceBank0 = layerBank.getChannel(0).createDeviceBank( 1 );
+         // subDeviceBank0.scrollTo( 0 );
+         // subDevice1 = subDeviceBank0.getDevice( 0 );
+      }
+   });
+   
 
    // ** Set initial state **
    
@@ -368,34 +392,29 @@ function init()
 
    updateIndications();
 
-   // host.scheduleTask(blinkTimer, null, 100);
-
-   // Initialize stuff
-   // TODO: put this on a delay, as the preset list is not availble during
-   //       the initial controller load.
    patchSelector.reset();
-
-   // TODO:    
-   // 2a) set observer to detect when "firstdevice" changes
-   // 2b) remove indication from old device
-   // 2c) add indication to new firstDevice
-   // 3) (optional) Set Source for first track and enable monitoring?
-   
 }
 
 function updateIndications()
 {
    // There are 8 macros. And that is that.
+   // 1 - pitch
+   // 2 - mod wheel
+   // 3 - sustain
+   // 4 - MASTER toggle for what it's worth.
+   // 5-8 - sliders 1-4
+   
    for (var i = 0; i < 8; i++)
    {
       primaryDevice.getMacro(i).getAmount().setIndication(true);
    }
-   
-   // 8 knobs
-   for (var i = 0; i < BANK_HEIGHT; i++)
-   {
-      trackBank.getTrack(i).getVolume().setIndication(true);
-   }
+
+   // Map sliders 5-8 directly to the first layer's device macros 1-4
+   // Map knobs 1-4 to the second and third layer's macros 1-4
+   // for (var i = 0; i < 4; i++)
+   // {
+      // subDevice1.getMacro(i).getAmount().setIndication(true);
+   // }
 }
 
 function exit()
@@ -420,24 +439,31 @@ function flush()
    }
 }
 
+function toggleMasterButton()
+{
+   var newval = ! blinkeys.masterButtonLed.isOn();
+   blinkeys.masterButtonLed.setIsOn( newval );
+
+   primaryDevice.getMacro(3).getAmount().set( newval ? 1 : 0, 2 ); // macro 3
+}
+
 function onMidi0(status, data1, data2)
 {
-   if (blinkeys.masterButtonLed.isOn())
-   {
+   /*
       println( "MIDI0" );
       printMidi(status, data1, data2);
-   }
+   */
 
    if (MIDIChannel(status) == 0) // channel 1
    {
-      if (status == 0xb0 && data1 == 59) // master button: does what again?
+      if (isChannelController(status) && data1 == 0x3b) // master button - always mapped. I mean, it's the MASTER right?
       {
          // This button is so cool that it gets special treatment.
          if (data2 == 127) {
-            blinkeys.masterButtonLed.setIsOn( ! blinkeys.masterButtonLed.isOn() );
+            toggleMasterButton();
          }
       }
-      else if (isIncontrolPads) 
+      else if (isIncontrolPads)
       {
          // in InControl pads mode, force keyboard notes to track 1
          if (isNoteOn(status))
@@ -448,12 +474,26 @@ function onMidi0(status, data1, data2)
          {
             instrumentRackTrack().stopNote( data1, data2 );
          }
-         else if (isChannelController(status) && status == 0xe0) // is pitch bend, channel 1
+         else if (status == 0xe0) // is pitch bend, channel 1
          {
-            // This won't get pitch bend to track 1, but at least you can
-            // now map it to a control. No per-note bend for you today. :(
-            pitchUserControl.set( data2, 128 ); // yeah it's only 7 bit
+            // Pitch bend: macro 1 (sorry no per-note pitch today)
+            // (Pitch is 7 bit on the Launchkey D: lsb bits are always 0.)
+            // As we know, it's 14 bits, with the middle at 0x2000;
+            var bendPos = ((data2 << 7) + data1); 
+            primaryDevice.getMacro(0).getAmount().set( bendPos, 0x4000 );
          }
+         else if (isChannelController(status))
+         {
+            if (data1 == 0x01) // mod wheel
+            {
+               primaryDevice.getMacro(1).getAmount().set( data2, 128 ); // macro 2
+            }
+            else if (data1 == 0x40) // sustain
+            {
+               primaryDevice.getMacro(2).getAmount().set( data2, 128 ); // macro 3
+            }
+         }
+         
          // No default event passthrough. The mapper can map to raw 
          // MIDI and in performance mode we don't want anything
          // happening that's not automated. If you must have CC, you need
@@ -495,9 +535,9 @@ function onMidi0(status, data1, data2)
 
 function onMidi1(status, data1, data2)
 {
-   if (blinkeys.masterButtonLed.isOn()) {
+   /*
       printMidi(status, data1, data2);
-   }
+   */
 
    if (isChannelController(status))
    {
@@ -512,21 +552,25 @@ function onMidi1(status, data1, data2)
       else if (data1 >= 41 && data1 <= 48) // slider
       {
          var sliderIndex = data1 - 41;
-         primaryDevice.getMacro(sliderIndex).getAmount().set(data2, 128);
+         
+         // Slider 1-4 = macro 5-8
+         // Slider 5-8 = sub-instrument 1 macros 1-4
+         
+         if (sliderIndex < 4)
+         {
+            primaryDevice.getMacro(sliderIndex + 4).getAmount().set(data2, 128);
+         }
+         else
+         {
+            // TODO uncomment when layerBank no longer causes crash
+            // subDevice1.getMacro(sliderIndex - 4).getAmount().set(data2, 128);
+         }
       }
-      else if (data1 == 7) // MASTER
+      else if (data1 == 7) // MASTER slider
       {
-         // TODO: only control master volume when MASTER lit? And then what else? 
-         //       There are only 8 macros. User controls? REALLY difficult to map
-         //       the control here as the mapper grabs it before we get it. :(
-         
-         // if (blinkeys.masterButtonLed.isOn()) 
-            masterTrack.getVolume().set( data2, 128 );
-         
-         // else 
-         // Generate a completely different control so it's mappable?
+         masterTrack.getVolume().set( data2, 128 );
       }
-      else if (data1 >= 51 && data1 <= 58) // buttons = primary presets: send notes.
+      else if (data1 >= 51 && data1 <= 58) // buttons 1-9
       {
          var buttonIndex = data1 - 51;
          if (data2 == 127)
@@ -535,10 +579,9 @@ function onMidi1(status, data1, data2)
             // considering that I can't prevent this anyway so whatever.
          }
       }
-
-      if (data2 == 127)
+      else if (data2 == 127)
       {
-         // button presses
+         // transport button presses
 
          if (data1 == 102) // TRACK left
          {
@@ -572,10 +615,9 @@ function onMidi1(status, data1, data2)
          {
             transport.record();
          }
-         else if (data1 == 59) // Master
+         else if (data1 == 0x3b) // Master
          {
-            // This button is so cool.
-            blinkeys.masterButtonLed.setIsOn( ! blinkeys.masterButtonLed.isOn() );
+            toggleMasterButton(); // This button is so cool.
          }
       }
    }
