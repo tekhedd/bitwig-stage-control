@@ -64,8 +64,8 @@ function PresetLoader( device )
    /**
     * @private
     * If not null, function that is called on successful patch
-    * loading with a single parameter, the patch name, or null on 
-    * each failure.
+    * loading with a single parameter, an object containing name-value
+    * pairs.
     */
    this._patchLoadedObserver = null;
 
@@ -150,7 +150,10 @@ PresetLoader.prototype._internalLoadCurrentPreset = function()
          this._isCurrentPresetLoaded = true;
          
          if (this._patchLoadedObserver) {
-            this._patchLoadedObserver( presetNumber, preset.name );
+            this._patchLoadedObserver( {
+               number: presetNumber,
+               name: preset.name
+            });
          }
          
          return preset.name;
@@ -158,7 +161,10 @@ PresetLoader.prototype._internalLoadCurrentPreset = function()
    }
    
    if (this._patchLoadedObserver) {
-      this._patchLoadedObserver( presetNumber, null );
+      this._patchLoadedObserver( {
+         number: presetNumber,
+         name: null // Indicates no preset found
+      });
    }
    return null;
 };

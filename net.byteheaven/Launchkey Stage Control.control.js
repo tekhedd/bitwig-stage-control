@@ -315,14 +315,23 @@ function init()
    
    // We will load presets into the primary device
    var presetLoader = new PresetLoader( primaryDevice );
-   presetLoader.setPatchLoadedObserver( function(number, name){
+   presetLoader.setPatchLoadedObserver( function(params){
+      var number = params.number;
+      var patchpart = "";
+      if (number)
+      {
+         var scene = ((number - 1) * PROGRAM_WIDTH);
+         patchpart = ' (P:' + number + " SC:" + scene + ")";
+      }
+      
+      var name = params.name;
       if (name)
       {
-         host.showPopupNotification( "" + name + ' (' + (number + 1) + ')' );
+         host.showPopupNotification( "" + name + patchpart );
       }
       else
       {
-         host.showPopupNotification( 'NO PRESET FOUND (' + (number + 1) + ')' );
+         host.showPopupNotification( 'NO PRESET FOUND' + patchpart );
       }
    });
    
@@ -492,13 +501,23 @@ function onMidi0(status, data1, data2)
             {
                primaryDevice.getMacro(2).getAmount().set( data2, 128 ); // macro 3
             }
+
+            // Sustain pedal/controller hack. We can't send sustain directly, so sacrifice 
+            // some notes to the gods of MIDI and convert them to CC later.
+            // I use pizmidi "midiconverter3" to notes back to CC's. :o
+            if (data1 == 0x40) // sustain
+            {
+               printMidi(status, data1, data2);
+               if (data2 > 0)
+               {
+                  instrumentRackTrack().startNote( 127, data2 );
+               }
+               else
+               {
+                  instrumentRackTrack().stopNote( 127, 0 );
+               }
+            }
          }
-         
-         // No default event passthrough. The mapper can map to raw 
-         // MIDI and in performance mode we don't want anything
-         // happening that's not automated. If you must have CC, you need
-         // to write a VST that can generate it because damned if I can
-         // find one.
       } 
       else 
       {
