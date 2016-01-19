@@ -3,24 +3,28 @@ Controller Scripts to manage Bitwig in a live performance environment using one 
 
 ## Goals
 
+### Implemented
+
  * Immediately seek to and load a specific performance configuration without touching the computer
  * Keys and controls should always control the current performance configuration, with no possibility of accidentally changing that.
  * Load Bitwig presets containing native and/or VST plugins
- * Send program change to VSTi plugins
- * Allow remote control using Program Change commands from MIDI IN
- * Stability and maintainability
+ * Send program change to VSTi plugins (using plugin)
  * Map controls to currently loaded macros as completely as possible
  * Always-on access to master volume.
- * Intelligent mapping of remaining controls to channel volumes?
+ * Intelligent mapping of remaining controls to plugin volumes
 
-Dreams:
+### Planned
 
- * Find and load preset by name (via MIDI SYSEX messages?)
+ * Allow remote control using Program Change commands from MIDI IN
+
+### Dreams
+
+ * Find and load preset by name (via MIDI SYSEX messages? Standalone app?)
  * Map songs to patches or sequence-of-patches
 
-## Strategy
+## Strategy: one large project with demand-loaded presets
 
-This design attempts to solve the problem by loading all possible configurations into a single project. Presets are loaded into the first device in Track 1 by searching for specially-named presets. "Current program" is represented by an integer value stored in a User Control. Each program maps to a dedicated group of 5 scenes for clip launching (configurable).
+This design loads all possible configurations into a single project. Presets are loaded into the first device in Track 1 by searching for specially-named presets. "Current program" is also stored in a User Control for use in mappings. Each program maps to a dedicated group of 5 scenes for clip launching (configurable).
 
 Benefits:
  * Fast load time when switching patches
@@ -32,27 +36,31 @@ Benefits:
 Drawbacks:
  * Limited number of clips per patch
  * At 5 Scenes per patch, there could be a lot of scenes
- * No way to pass raw MIDI CC data to Track 1
- * Controls are limited to 8 Macros, because loaded presets do not contain mappings
-
-### Alternate approaches
-
-The "open tab" approach would require the controller script to locate scenes by navigating the list of open tabs. This requires opening every possible patch in a tab before starting. Bitwig can handle this, but can you?
+ * No way to pass raw MIDI CC data to Track 1 (worked around using note values and pizmidi's mapping plugin)
+ * Controls must map to predefined macros on the presets, as mappings are not maintained when loading presets.
 
 ## What it does and how to use it
 
 When InControl is turned off, Launchkey acts like a normal dumb MIDI controller. When it is turned on, the controller is hard wired to a performance configuration.
 
-You will need a project with 4 tracks, where every 5 scenes is reserved for a program. So, program 2 is scene 5, program 3 is scene 10. Anything you want to control with the keyboard must be in track 1.
+You will need a project with (at least) 4 tracks, where every group of 5 scenes maps to a program. So, program 2 is scene 5, program 3 is scene 10. Anything you want to control with the keyboard must be in track 1.
+
+For best results, the first device in the first track should be an Instrument Layer, and the first device in each layer should be a CHAIN. 
+
+(TODO: add sample project!)
 
  * Keyboard always goes to track 1
- * Pads control only the clips in the scenes for the current patch's bank of tracks
- * Sliders are macros 1-8. Map your macros to control whatever.
- * knobs are volume for track 1-4
- * Transport controls work as normal 
+ * Sliders 1-4 control macros 5-8 on the first track's first device
+ * Sliders 5-8 control macros 1-4 on the first device in the first layer of the first track's Instrument Layer, but only if it is a CHAIN.
+ * Master slider controls the master volume.
+ * knobs 1-4 control macros 5-8 of the CHAIN in the first layer of track 1.
+ * Knobs 5, 6, and 7 control the volume of the first three layerse in the Instrument Layer
+ * Knob 8 controls the volume of tracks 2-4
+ * Pads trigger the clips in the scenes for the current patch's bank of tracks on tracks 2-4.
+ * Transport controls work "normally"
  * Track Next/Prev buttons go to next/previous program
 
-Exceptions: these controls work whether InControl is mapped or not:
+These controls work whether InControl is mapped or not:
 
  * Master slider always controls mater volume
 
@@ -67,4 +75,4 @@ When you hit the lower row (patch), the patch loads, the transport is stopped, a
 Currently supports Novation Launchkey. Will autodetect Launchkey 61, but should work without 
 changes on any Launchkey v1 keyboard (grey/orange).
 
-Oh, and you need Bitwig. And a computer.
+Oh, and you need Bitwig >= 1.3.6. And a computer.
