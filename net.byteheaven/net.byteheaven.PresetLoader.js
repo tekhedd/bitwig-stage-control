@@ -101,7 +101,7 @@ PresetLoader.prototype.setAvailablePresets = function( names )
       }
    }
    
-   // We have new preset names. Load again.
+   // We have new preset names. Load again, if not currently loaded.
    if ((!this._isCurrentPresetLoaded) && (this._currentPreset >= 0))
    {
       this.loadPreset( this._currentPreset - 1 );

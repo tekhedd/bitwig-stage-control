@@ -72,8 +72,15 @@ function clipsTrack1()
    return trackBank.getChannel( 3 ); 
 }
 
-var subDevice1;
+var subDevice1Layer; // DeviceLayer
+var subDevice1;      // Device
+var isSubDevice1Mapped = false;
+
+var subDevice2Layer; // DeviceLayer
 var subDevice2;
+var isSubDevice2Mapped = false;
+
+var subDevice3Layer; // DeviceLayer
 
 // Setting the value of the incontrol light also sets the value
 // of incontrol for that button
@@ -333,6 +340,8 @@ function init()
       {
          host.showPopupNotification( 'NO PRESET FOUND' + patchpart );
       }
+      
+      updateIndications();
    });
    
 
@@ -340,27 +349,47 @@ function init()
    
    // * Create a device that will point to:
    //   primaryDevice -> layer(0) -> Primary Device
-   //   So we can manipulate its macros.
-   primaryDevice.hasLayers().addValueObserver(function(hasLayers){
-      println( "Primary device has layers: " + hasLayers );
-      if (hasLayers)
-      {
-         // LayerBank CAUSES CRASH
-         // var layerBank = primaryDevice.createLayerBank( 1 );
-         // layerBank.scrollToChannel( 0 );
-         // var subDeviceBank0 = layerBank.getChannel(0).createDeviceBank( 1 );
-         // subDeviceBank0.scrollTo( 0 );
-         // subDevice1 = subDeviceBank0.getDevice( 0 );
-      }
-   });
+   // 
+   // If the primary device is a CHAIN, map additional controls to its
+   // macro knobs. Otherwise, leave it alone.
    
+   var layerBank = primaryDevice.createLayerBank( 3 );
+   layerBank.scrollToChannel( 0 );
+   subDevice1Layer = layerBank.getChannel(0);
+   var subDeviceBank0 = subDevice1Layer.createDeviceBank( 1 );
+   subDeviceBank0.scrollTo( 0 );
+   subDevice1 = subDeviceBank0.getDevice( 0 ); // First device in first channel of layer bank
+   subDevice1.addNameObserver( 120, "n/a", function( name ){
+      if (name == "Chain") {
+         isSubDevice1Mapped = true;
+      }
+      else {
+         isSubDevice1Mapped = false;
+      }
+      updateIndications();
+   });
+
+   subDevice2Layer = layerBank.getChannel(1);
+   var subDeviceBank1 = subDevice2Layer.createDeviceBank( 1 );
+   subDevice2 = subDeviceBank1.getDevice( 0 ); // First device on channel 2 of the layer
+   subDevice2.addNameObserver( 120, "n/a", function( name ){
+      if (name == "Chain") {
+         isSubDevice2Mapped = true;
+      }
+      else {
+         isSubDevice2Mapped = false;
+      }
+      updateIndications();
+   });
+
+   subDevice3Layer = layerBank.getChannel(2);
 
    // ** Set initial state **
    
    // What shall that extra round button do?
    blinkeys.getBottomCircleLed().setColor( [0, 0] );
    
-   // If the bank changes we need to update our current patch? Maybe?
+   // If the bank offset changes, do we need to update our current patch? Maybe?
    sceneBank.addScrollPositionObserver( function(pos) {
       patchSelector.scrollPositionChanged( pos );
    },
@@ -410,20 +439,40 @@ function updateIndications()
    // 1 - pitch
    // 2 - mod wheel
    // 3 - sustain
-   // 4 - MASTER toggle for what it's worth.
+   // 4 - The Master button, configured as a toggle
    // 5-8 - sliders 1-4
    
-   for (var i = 0; i < 8; i++)
-   {
-      primaryDevice.getMacro(i).getAmount().setIndication(true);
-   }
-
-   // Map sliders 5-8 directly to the first layer's device macros 1-4
-   // Map knobs 1-4 to the second and third layer's macros 1-4
-   // for (var i = 0; i < 4; i++)
-   // {
-      // subDevice1.getMacro(i).getAmount().setIndication(true);
-   // }
+   primaryDevice.getMacro(0).getAmount().setIndication(true);
+   primaryDevice.getMacro(1).getAmount().setIndication(true);
+   primaryDevice.getMacro(2).getAmount().setIndication(true);
+   primaryDevice.getMacro(3).getAmount().setIndication(true);
+   primaryDevice.getMacro(4).getAmount().setIndication(true);
+   primaryDevice.getMacro(5).getAmount().setIndication(true);
+   primaryDevice.getMacro(6).getAmount().setIndication(true);
+   primaryDevice.getMacro(7).getAmount().setIndication(true);
+   
+   subDevice1Layer.getVolume().setIndication(true);
+   subDevice2Layer.getVolume().setIndication(true);
+   subDevice3Layer.getVolume().setIndication(true);
+   
+   // If subdevice1 is a chain
+   // slider 5-8 and buttons 5-8 map to it
+   subDevice1.getMacro(0).getAmount().setIndication(isSubDevice1Mapped);
+   subDevice1.getMacro(1).getAmount().setIndication(isSubDevice1Mapped);
+   subDevice1.getMacro(2).getAmount().setIndication(isSubDevice1Mapped);
+   subDevice1.getMacro(3).getAmount().setIndication(isSubDevice1Mapped);
+   
+   // Knobs 1-4 map to subdevice 1 and 2, because options.
+   subDevice1.getMacro(4).getAmount().setIndication(isSubDevice1Mapped);
+   subDevice1.getMacro(5).getAmount().setIndication(isSubDevice1Mapped);
+   subDevice1.getMacro(6).getAmount().setIndication(isSubDevice1Mapped);
+   subDevice1.getMacro(7).getAmount().setIndication(isSubDevice1Mapped);
+   subDevice2.getMacro(0).getAmount().setIndication(isSubDevice2Mapped);
+   subDevice2.getMacro(1).getAmount().setIndication(isSubDevice2Mapped);
+   subDevice2.getMacro(2).getAmount().setIndication(isSubDevice2Mapped);
+   subDevice2.getMacro(3).getAmount().setIndication(isSubDevice2Mapped);
+   
+   // Knobs 5-8 map to subdevice 3
 }
 
 function exit()
@@ -563,23 +612,58 @@ function onMidi1(status, data1, data2)
       if (data1 >= 21 && data1 <= 28) // knob
       {
          var knobIndex = data1 - 21;
-         if (knobIndex < BANK_HEIGHT)
+         
+         // 1-4 map to 
+         //   subDevice 1 5-8, AND subDevice2 1-4
+         // I know that's not really cool but it's good to have options.2
+         if (knobIndex < 4)           
          {
-            trackBank.getTrack(knobIndex).getVolume().set(data2, 128);
+            if (isSubDevice1Mapped) {
+               subDevice1.getMacro(knobIndex + 4).getAmount().set(data2, 128);
+            }
+            
+            if (isSubDevice2Mapped) {
+               subDevice2.getMacro(knobIndex).getAmount().set(data2, 128);
+            }
+         }
+         else if (knobIndex == 4) // layer 1 volume
+         {
+            subDevice1Layer.getVolume().set(data2, 128);
+         }
+         else if (knobIndex == 5) // layer 2 volume
+         {
+            subDevice2Layer.getVolume().set(data2, 128);
+         }
+         else if (knobIndex == 6) // layer 3 volume
+         {
+            subDevice3Layer.getVolume().set(data2, 128);
+         }
+         else if (knobIndex == 7) // all clips volume
+         {
+            var trackIndex;
+            for (trackIndex = 1; trackIndex < BANK_HEIGHT; ++trackIndex)
+            {
+               trackBank.getTrack(trackIndex).getVolume().set(data2, 128);
+            }
          }
       }
       else if (data1 >= 41 && data1 <= 48) // slider
       {
          var sliderIndex = data1 - 41;
          
-         // Slider 1-4 = macro 5-8
-         // Slider 5-8 = sub-instrument 1 macros 1-4
-         
-         if (sliderIndex < 4)
+         if (sliderIndex < 4)  // Slider 1-4 = macro 5-8 
          {
             primaryDevice.getMacro(sliderIndex + 4).getAmount().set(data2, 128);
          }
-         else
+         else if (sliderIndex < 8) // Maps to subDevice1's macros, maybe
+         {
+            if (isSubDevice1Mapped)
+            {
+               var macroIx = sliderIndex - 4;
+               subDevice1.getMacro(macroIx).getAmount().set( data2, 128 );
+            }
+         }
+         else // Slider 6-8 = sub-instrument 1 macros 1-3
          {
             // TODO uncomment when layerBank no longer causes crash
             // subDevice1.getMacro(sliderIndex - 4).getAmount().set(data2, 128);
