@@ -76,3 +76,10 @@ Currently supports Novation Launchkey. Will autodetect Launchkey 61, but should 
 changes on any Launchkey v1 keyboard (grey/orange).
 
 Oh, and you need Bitwig >= 1.3.6. And a computer.
+
+## License
+
+This project is made available to you under the terms of the WTFPL v2. See LICENSE.txt for the full
+license text.
+
+You can do lots of cool things with the bitwig control API. I encourage you to go do them.
