@@ -1,6 +1,12 @@
 # bitwig-stage-control
 Controller Scripts to manage Bitwig in a live performance environment using one large project.
 
+## Status
+
+Project is on hold. 
+
+Works nicely with launchkey V1 (with the orange bottom) and Bitwig 1.x, but has not been updated to work with Bitwig 2 or any other products. 
+
 ## Goals
 
 ### Implemented
