@@ -1,3 +1,7 @@
+# Moved
+
+This project is now at https://gitlab.com/byteheaven/bitwig-stage-control
+
 # bitwig-stage-control
 Controller Scripts to manage Bitwig in a live performance environment using one large project.
 
